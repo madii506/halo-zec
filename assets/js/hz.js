@@ -15,22 +15,29 @@ const usd = n => n == null ? '—' : n >= 1e6 ? '$' + (n / 1e6).toFixed(2) + 'M'
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const short = a => a ? a.slice(0, 4) + '…' + a.slice(-4) : '';
 
-// ---------------------------------------------------------------- intro: no words, about three seconds, any key or click skips
+// ---------------------------------------------------------------- intro: no words, about three and a half seconds, any key or click skips
 function intro() {
   const el = $('#intro'); let done = false;
-  const end = () => {
+  // light gathers: small gold squares fly in from the dark and land on the ring
+  const parts = $('#iparts'), wrap = $('#iwrap'), R = wrap.getBoundingClientRect().width * .75 * .82;
+  if (!reduce) for (let i = 0; i < 36; i++) {
+    const p = document.createElement('i'), a = (i / 36) * Math.PI * 2, far = 260 + Math.random() * 420, b = a + (Math.random() - .5) * .9;
+    p.style.transform = `translate(${Math.cos(b) * far}px,${Math.sin(b) * far}px) rotate(${Math.random() * 180}deg)`;
+    parts.appendChild(p);
+    setTimeout(() => { p.style.transition = `transform ${.7 + Math.random() * .3}s cubic-bezier(.2,.7,.2,1), opacity .3s`; p.style.opacity = 1; p.style.transform = `translate(${Math.cos(a) * R}px,${Math.sin(a) * R}px) rotate(0deg)`; }, 30 + Math.random() * 220);
+    setTimeout(() => { p.style.transition = 'opacity .35s'; p.style.opacity = 0; }, 1050 + i * 6);
+  }
+  const end = (fast) => {
     if (done) return; done = true;
-    el.classList.add('fly');
-    const w = el.querySelector('.iwrap'), b = $('.brand svg').getBoundingClientRect(), r = w.getBoundingClientRect();
-    if (b.width && r.height) { const s = b.height / r.height * .99, tx = b.left + b.width * (210 / 1582) - (r.left + r.width / 2), ty = b.top + b.height * (270 / 556) - (r.top + r.height / 2);
-      w.style.transition = 'transform .75s cubic-bezier(.7,0,.2,1)'; w.style.transform = `translate(${tx}px,${ty}px) scale(${s})`; }
-    setTimeout(() => { el.classList.add('out'); document.body.classList.remove('intro-on'); reveal(); typed(); }, reduce ? 0 : 560);
-    setTimeout(() => el.remove(), 1400);
+    el.classList.add('zoom'); document.body.classList.remove('intro-on'); reveal();
+    setTimeout(() => el.classList.add('gone'), fast ? 350 : 900);
+    setTimeout(() => el.remove(), fast ? 800 : 1400);
   };
   let seen = false; try { seen = sessionStorage.getItem('hz:intro') === '1'; sessionStorage.setItem('hz:intro', '1'); } catch {}
-  if (reduce || seen || location.hash.length > 1) { el.style.transition = 'none'; return end(); }
-  setTimeout(end, 2750);
-  el.addEventListener('click', end); addEventListener('keydown', end, { once: true }); addEventListener('wheel', end, { once: true, passive: true });
+  if (reduce || seen || location.hash.length > 1) { el.style.transition = 'none'; el.classList.add('gone'); document.body.classList.remove('intro-on'); reveal(); setTimeout(() => el.remove(), 50); return; }
+  setTimeout(() => end(false), 3050);
+  const skip = () => end(true);
+  el.addEventListener('click', skip); addEventListener('keydown', skip, { once: true }); addEventListener('wheel', skip, { once: true, passive: true }); addEventListener('touchmove', skip, { once: true, passive: true });
 }
 
 // ---------------------------------------------------------------- reveal on scroll, nav state
@@ -130,6 +137,8 @@ async function launch(f) {
   btn.disabled = true; btn.innerHTML = 'Launching…'; $('#done').hidden = true;
   [1, 2, 3].forEach(i => step(i)); step(0, 'ok');
   try {
+    const st = await api('status').catch(() => null);
+    if (st && st.ready === false) throw new Error('Launches open in a moment. Try again soon.');
     step(1, 'run');
     const ch = await api('pow'); const need = 2 ** ch.bits;
     const p = await pow(ch.challenge, ch.bits, d => { $('#powpct').textContent = Math.min(99, Math.round(d.tries / need * 100)) + '%'; });
@@ -304,13 +313,32 @@ async function typed() {
   for (const [t, k] of parts) { const s = document.createElement(k ? 'b' : 'span'); tx.appendChild(s); for (const ch of t) { s.textContent += ch; await sleep(reduce ? 0 : 22 + Math.random() * 30); } }
 }
 
+
+// the cursor wears a halo; it brightens over anything you can press
+function cursorHalo() {
+  if (reduce || matchMedia('(pointer: coarse)').matches) return;
+  const r = document.createElement('div'); r.className = 'chalo'; document.body.appendChild(r);
+  let x = -99, y = -99, tx = -99, ty = -99, s = 1, ts = 1;
+  addEventListener('pointermove', e => { tx = e.clientX; ty = e.clientY; r.classList.add('on'); const hot = e.target.closest('a,button,input,textarea,select,summary,.coin,label,.drop'); ts = hot ? 1.45 : 1; r.classList.toggle('hot', !!hot); }, { passive: true });
+  document.addEventListener('pointerleave', () => r.classList.remove('on'));
+  (function loop() { x += (tx - x) * .2; y += (ty - y) * .2; s += (ts - s) * .15; r.style.transform = `translate(${x - 12}px,${y - 20}px) scale(${s})`; requestAnimationFrame(loop); })();
+}
+// split the headline into words so they can rise one by one
+function words() {
+  let i = 0;
+  $$('h1 .l').forEach(line => { line.childNodes.forEach(n => {
+    if (n.nodeType === 3) { const f = document.createDocumentFragment(); n.textContent.split(/(\s+)/).forEach(t => { if (!t) return; if (/^\s+$/.test(t)) f.appendChild(document.createTextNode(t)); else { const s = document.createElement('span'); s.className = 'w'; s.style.setProperty('--i', i++); s.textContent = t; f.appendChild(s); } }); line.replaceChild(f, n); }
+    else if (n.nodeType === 1) { n.classList.add('w'); n.style.setProperty('--i', i++); }
+  }); });
+}
+
 // the hero leans toward the pointer a little
 function tilt() {
   const st = $('.stage'); if (!st || reduce || matchMedia('(pointer: coarse)').matches) return;
   addEventListener('pointermove', e => { const x = e.clientX / innerWidth - .5, y = e.clientY / innerHeight - .5; st.style.setProperty('--ry', (x * 14).toFixed(2) + 'deg'); st.style.setProperty('--rx', (-y * 10).toFixed(2) + 'deg'); }, { passive: true });
 }
 addEventListener('keydown', e => { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#coins').scrollIntoView(); setTimeout(() => $('#csearch').focus(), 500); } });
-intro(); nav(); tilt(); bindTerm(); bindLaunch(); bindCoins(); bindShield(); bindFaq(); tape();
+words(); cursorHalo(); intro(); nav(); tilt(); bindTerm(); bindLaunch(); bindCoins(); bindShield(); bindFaq(); tape();
 prices(); setInterval(prices, 60000);
 loadCoins(); setInterval(loadCoins, 45000);
 if (!document.body.classList.contains('intro-on')) { reveal(); typed(); }
